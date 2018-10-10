@@ -1,0 +1,18 @@
+Compiler - Homework 1
+( 0510025 / Jing-Hsiang Huang )
+
+# Abilities
+ - Tokenize a C- program based on https://people.cs.nctu.edu.tw/~ypyou/courses/Compiler-f18/projects/project1.pdf
+ - Show the process line-by-line
+ - Count the frequencies of identifiers
+ - Identify and execute pragmas (must start from the beginning of a line)
+   - Turn on/off source code listing	"#pragma source (on|off)"
+   - Turn on/off identifier statistics	"#pragma statistic (on|off)"
+   - Turn on/off token listing		"#pragma token (on|off)"
+
+# Platforms
+ - Tested on my Mac and linux1.cs.nctu.edu.tw
+
+# How to run my scanner
+ > make 
+ > ./scanner 
