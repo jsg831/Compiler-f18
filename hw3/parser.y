@@ -439,8 +439,8 @@ literal_const
   | FLOAT_CONST { attribute.dval = $1; }
   | SCIENTIFIC  { attribute.dval = $1; }
   | STR_CONST   { attribute.text = $1; }
-  | TRUE
-  | FALSE
+  | TRUE        { attribute.value = 1; }
+  | FALSE       { attribute.value = 0; }
 ;
 
 %%
@@ -583,6 +583,7 @@ void entry(int kind, int type, char* name, int decl)
     case Constant:
       switch (type) {
         case Int:
+        case Bool:
           entry->attribute.value = attribute.value;
           break;
         case Float:
@@ -615,6 +616,12 @@ void print_entry(Entry *entry)
     switch (entry->type) {
       case Int:
         printf("%-24d", entry->attribute.value);
+        break;
+      case Bool:
+        if (entry->attribute.value)
+          printf("true");
+        else
+          printf("false");
         break;
       case Float:
       case Double:
