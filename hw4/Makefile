@@ -1,5 +1,5 @@
 TARGET = parser
-OBJECT = lex.yy.c y.tab.c y.tab.o lex.yy.o y.output parser y.tab.h main.o symtable.o
+OBJECT = lex.yy.c y.tab.c y.tab.o lex.yy.o y.output parser y.tab.h main.o symtable.o semcheck.o error.o
 CC = gcc -g -O0
 LEX = flex
 YACC = yacc -v
@@ -8,8 +8,8 @@ LIBS = -ll
 
 all: $(TARGET)
 
-parser: y.tab.o lex.yy.o main.o symtable.o
-	$(CC) -o $(TARGET) y.tab.o lex.yy.o main.o symtable.o $(LIBS)
+parser: y.tab.o lex.yy.o main.o symtable.o semcheck.o error.o
+	$(CC) -o $(TARGET) y.tab.o lex.yy.o main.o symtable.o semcheck.o error.o $(LIBS)
 
 y.tab.o: y.tab.c
 	$(CC) -c y.tab.c
@@ -28,6 +28,12 @@ main.o: main.c symtable.h datatype.h
 
 symtable.o: symtable.c symtable.h
 	$(CC) -c symtable.c
+
+semcheck.o: semcheck.c semcheck.h
+	$(CC) -c semcheck.c
+
+error.o: error.c error.h
+	$(CC) -c error.c
 
 clean:
 	rm -f $(TARGET) $(OBJECT)

@@ -48,6 +48,11 @@ struct ConstAttr{
   bool hasMinus;//negative value;
 };
 
+struct InitArray {
+  int reference;
+  int size;
+};
+
 struct FuncAttrNode{
   int                  reference;
   struct ExtType*      value; // parameter type
@@ -72,6 +77,7 @@ struct SymTableNode{
   char                 name[33]; //less than 33 character
   KIND                 kind;
   int                  level;
+  bool                 decl;
   struct ExtType*      type;
   struct Attribute*    attr;
   struct SymTableNode* next;

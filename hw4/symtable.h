@@ -1,4 +1,8 @@
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "datatype.h"
+#include "error.h"
 
 int initSymTableList(struct SymTableList *list);
 int destroySymTableList(struct SymTableList *list);
@@ -12,7 +16,7 @@ struct SymTableNode* findTableNode(struct SymTable* table,const char* name);
 //
 struct SymTableNode* deleteTableNode(struct SymTableNode* target);
 struct SymTableNode* createVariableNode(const char* name,int level,struct ExtType* type);
-struct SymTableNode* createFunctionNode(const char* name,int level,struct ExtType* type,struct Attribute* attr);
+struct SymTableNode* createFunctionNode(const char* name,int level,struct ExtType* type,struct Attribute* attr,bool decl);
 struct SymTableNode* createConstNode(const char* name,int level,struct ExtType* type,struct Attribute* attr);
 struct SymTableNode* createParameterNode(const char* name,int level,struct ExtType* type);
 //
@@ -42,3 +46,9 @@ int deleteVariableList(struct VariableList* list);
 int connectVariableList(struct VariableList* list,struct Variable* node);
 struct Variable* createVariable(const char* name,struct ExtType* type);
 struct Variable* deleteVariable(struct Variable* target);
+//
+struct InitArray* createInitArray();
+int deleteInitArray(struct InitArray* list);
+int connectInitArray(struct InitArray* list);
+// struct InitArrayNode* createInitArrayNode(struct Attribute* attr);
+// struct InitArrayNode* deleteInitArrayNode(struct InitArrayNode* target);

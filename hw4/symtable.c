@@ -1,6 +1,3 @@
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include "symtable.h"
 
 int initSymTableList(struct SymTableList *list)
@@ -96,6 +93,20 @@ int deleteLastSymTable(struct SymTableList* list)//leave scope
 
 int insertTableNode(struct SymTable *table,struct SymTableNode* newNode)
 {
+  // Check if the symbol has been defined before
+  struct SymTableNode* node = findFuncDeclaration(table, newNode->name);
+  if (node != NULL)
+  {
+    // If the last entry is a function declaration, then it is legal
+    if (node->decl && !newNode->decl)
+    {
+      // set as defined
+      node->decl = false;
+    } else {
+      printError("symbol '%s' has been declared.", newNode->name);
+      deleteTableNode(newNode);
+    }
+  }
   if (table->tail == NULL)
   {
     table->head = newNode;
@@ -108,6 +119,17 @@ int insertTableNode(struct SymTable *table,struct SymTableNode* newNode)
   }
   newNode->reference += 1;
   return 0;
+}
+
+struct SymTableNode* findTableNode(struct SymTable* table,const char* name)
+{
+  struct SymTableNode *node = table->head;
+  while (node != NULL)
+  {
+    if (strcmp(node->name, name) == 0) return node;
+    node = node->next;
+  }
+  return NULL;
 }
 
 struct SymTableNode* deleteTableNode(struct SymTableNode* target)//return next node
@@ -146,13 +168,14 @@ struct SymTableNode* createVariableNode(const char* name,int level,struct ExtTyp
   return newNode;
 }
 
-struct SymTableNode* createFunctionNode(const char* name,int level,struct ExtType* type,struct Attribute* attr)
+struct SymTableNode* createFunctionNode(const char* name,int level,struct ExtType* type,struct Attribute* attr,bool decl)
 {
   struct SymTableNode *newNode = (struct SymTableNode*)malloc(sizeof(struct SymTableNode));
   //set node
   strncpy(newNode->name,name,32);
   newNode->kind = FUNCTION_t;
   newNode->level = level;
+  newNode->decl = decl;
   /**/
   newNode->type = type;
   newNode->type->reference += 1;
@@ -757,4 +780,27 @@ struct Variable* deleteVariable(struct Variable* target)
     free(target);
   }
   return next;
+}
+
+struct InitArray* createInitArray()
+{
+  struct InitArray* list;
+  list = (struct InitArray*)malloc(sizeof(struct InitArray));
+  list->reference = 0;
+  list->size = 1;
+  return list;
+}
+
+int deleteInitArray(struct InitArray* list)
+{
+  if (list->reference > 0) return -1;
+  free(list);
+  return 0;
+}
+
+int connectInitArray(struct InitArray* list)
+{
+  if (list == NULL) return -1;
+  list->size += 1;
+  return 0;
 }

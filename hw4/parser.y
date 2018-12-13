@@ -5,6 +5,7 @@
 #include "datatype.h"
 #include "symtable.h"
 #include "semcheck.h"
+#include "error.h"
 
 extern int linenum;
 extern FILE  *yyin;
@@ -14,6 +15,7 @@ extern int Opt_SymTable; // declared in lex.l
 int scope = 0; // default is 0(global)
 struct SymTableList *symbolTableList; // create and initialize in main.c
 struct ExtType *funcReturnType;
+int errorCount = 0;
 
 %}
 %union{
@@ -25,6 +27,7 @@ struct ExtType *funcReturnType;
   //struct ExtType     *extType;
   struct Variable      *variable;
   struct VariableList  *variableList;
+  struct InitArray *initialArray;
   struct ArrayDimNode  *arrayDimNode;
   //struct ConstAttr   *constAttr;
   struct FuncAttrNode  *funcAttrNode;
@@ -43,7 +46,8 @@ struct ExtType *funcReturnType;
 
 %type <variable>     array_decl
 %type <variableList> identifier_list
-%type <arrayDimNode> dim
+%type <initialArray> initial_array literal_list
+%type <arrayDimNode> dim dimension
 %type <funcAttrNode> parameter_list
 %type <attribute>    literal_const
 %type <symTableNode> const_list
@@ -141,8 +145,10 @@ funct_def
       node = findFuncDeclaration(symbolTableList->global,$2);
       if(node == NULL) //no declaration yet
       {
-        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL);
+        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,false);
         insertTableNode(symbolTableList->global,newNode);
+      } else if (!node->decl) {
+        printError("function '%s' has been defined.", node->name);
       }
       free($2);
     } compound_statement
@@ -154,8 +160,10 @@ funct_def
       struct Attribute *attr = createFunctionAttribute($4);
       if(node == NULL)//no declaration yet
       {
-        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr);
+        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,false);
         insertTableNode(symbolTableList->global,newNode);
+      } else if (!node->decl) {
+        printError("function '%s' has been defined.", node->name);
       }
     }
     L_BRACE
@@ -186,8 +194,10 @@ funct_def
       node = findFuncDeclaration(symbolTableList->global,$2);
       if(node == NULL)//no declaration yet
       {
-        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL);
+        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,false);
         insertTableNode(symbolTableList->global,newNode);
+      } else if (!node->decl) {
+        printError("function '%s' has been defined.", node->name);
       }
       free($2);
     }
@@ -200,8 +210,10 @@ funct_def
       if(node == NULL)//no declaration yet
       {
         struct Attribute *attr = createFunctionAttribute($4);
-        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr);
+        struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,false);
         insertTableNode(symbolTableList->global,newNode);
+      } else if (!node->decl) {
+        printError("function '%s' has been defined.", node->name);
       }
     }
     L_BRACE
@@ -232,31 +244,47 @@ funct_decl
   : scalar_type ID L_PAREN R_PAREN SEMICOLON
     {
       funcReturnType = createExtType($1,0,NULL);
-      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL);
-      insertTableNode(symbolTableList->global,newNode);
+      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,true);
+      struct SymTableNode *node = findFuncDeclaration(symbolTableList->global,$2);
+      if (node == NULL)
+        insertTableNode(symbolTableList->global,newNode);
+      else
+        printError("function '%s' has been declared.", node->name);
       free($2);
     }
   | scalar_type ID L_PAREN parameter_list R_PAREN SEMICOLON
     {
       funcReturnType = createExtType($1,0,NULL);
       struct Attribute *attr = createFunctionAttribute($4);
-      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr);
-      insertTableNode(symbolTableList->global,newNode);
+      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,true);
+      struct SymTableNode *node = findFuncDeclaration(symbolTableList->global,$2);
+      if (node == NULL)
+        insertTableNode(symbolTableList->global,newNode);
+      else
+        printError("function '%s' has been declared.", node->name);
       free($2);
     }
   | VOID ID L_PAREN R_PAREN SEMICOLON
     {
       funcReturnType = createExtType(VOID_t,0,NULL);
-      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL);
-      insertTableNode(symbolTableList->global,newNode);
+      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,true);
+      struct SymTableNode *node = findFuncDeclaration(symbolTableList->global,$2);
+      if (node == NULL)
+        insertTableNode(symbolTableList->global,newNode);
+      else
+        printError("function '%s' has been declared.", node->name);
       free($2);
     }
   | VOID ID L_PAREN parameter_list R_PAREN SEMICOLON
     {
       funcReturnType = createExtType(VOID_t,0,NULL);
       struct Attribute *attr = createFunctionAttribute($4);
-      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr);
-      insertTableNode(symbolTableList->global,newNode);
+      struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,true);
+      struct SymTableNode *node = findFuncDeclaration(symbolTableList->global,$2);
+      if (node == NULL)
+        insertTableNode(symbolTableList->global,newNode);
+      else
+        printError("function '%s' has been declared.", node->name);
       free($2);
     }
 ;
@@ -344,6 +372,7 @@ identifier_list
   | identifier_list COMMA array_decl ASSIGN_OP initial_array
     {
       connectVariableList($1,$3);
+      checkInitArray($3,$5);
       $$ = $1;
     }
   | identifier_list COMMA array_decl
@@ -354,6 +383,7 @@ identifier_list
   | array_decl ASSIGN_OP initial_array
     {
       $$ = createVariableList($1);
+      checkInitArray($1,$3);
     }
   | array_decl
     {
@@ -378,11 +408,21 @@ identifier_list
 
 initial_array
   : L_BRACE literal_list R_BRACE
+    {
+      $$ = $2;
+    }
 ;
 
 literal_list
   : literal_list COMMA logical_expression
+    {
+      connectInitArray($1);
+      $$ = $1;
+    }
   | logical_expression
+    {
+      $$ = createInitArray();
+    }
   |
 ;
 
@@ -425,6 +465,7 @@ array_decl
       struct Variable *newVariable = createVariable($1,type);
       free($1);
       $$ = newVariable;
+      checkArrayVariable($$);
     }
 ;
 
@@ -573,10 +614,12 @@ increment_expression
 function_invoke_statement
   : ID L_PAREN logical_expression_list R_PAREN SEMICOLON
     {
+      findID(symbolTableList,$1);
       free($1);
     }
   | ID L_PAREN R_PAREN SEMICOLON
     {
+      findID(symbolTableList,$1);
       free($1);
     }
 ;
@@ -671,7 +714,14 @@ array_list
 
 dimension
   : dimension ML_BRACE logical_expression MR_BRACE
+    {
+      // connectArrayDimNode($1,createArrayDimNode($3));
+      // $$ = $1;
+    }
   | ML_BRACE logical_expression MR_BRACE
+    {
+      // $$ = createArrayDimNode($2);
+    }
 ;
 
 scalar_type
