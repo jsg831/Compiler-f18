@@ -4,6 +4,8 @@
 #include "datatype.h"
 #include "error.h"
 
+extern struct SymTableList* symbolTableList;
+
 int initSymTableList(struct SymTableList *list);
 int destroySymTableList(struct SymTableList *list);
 //
@@ -37,6 +39,7 @@ struct ArrayDimNode* deleteArrayDimNode(struct ArrayDimNode* target);
 struct SymTableNode* findFuncDeclaration(struct SymTable* table,const char* name);
 int printSymTable(struct SymTable* table);
 int printType(struct ExtType* extType);
+char* typeString(struct ExtType* extType);
 int printConstAttribute(struct ConstAttr* constAttr);
 int printParamAttribute(struct FuncAttr* funcAttr);
 
@@ -48,7 +51,9 @@ struct Variable* createVariable(const char* name,struct ExtType* type);
 struct Variable* deleteVariable(struct Variable* target);
 //
 struct InitArray* createInitArray();
-int deleteInitArray(struct InitArray* list);
+int deleteInitArray(struct InitArray* target);
 int connectInitArray(struct InitArray* list);
-// struct InitArrayNode* createInitArrayNode(struct Attribute* attr);
-// struct InitArrayNode* deleteInitArrayNode(struct InitArrayNode* target);
+//
+bool canConvertTypeImplicitly(struct ExtType* source, struct ExtType* target, bool arg);
+int checkArrayDim(struct ArrayDimNode* a1, struct ArrayDimNode* a2);
+bool checkArraySize(struct ArrayDimNode* a1, struct ArrayDimNode* a2);

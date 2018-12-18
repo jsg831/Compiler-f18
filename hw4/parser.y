@@ -16,6 +16,9 @@ int scope = 0; // default is 0(global)
 struct SymTableList *symbolTableList; // create and initialize in main.c
 struct ExtType *funcReturnType;
 int errorCount = 0;
+bool lastReturn = false;
+int insideLoop = 0;
+BTYPE baseType = VOID_t;
 
 %}
 %union{
@@ -36,6 +39,8 @@ int errorCount = 0;
   struct SymTableNode  *symTableNode;
   //struct SymTable    *symTable;
   BTYPE                bType;
+  struct Expr          *expr;
+  struct ExprList      *exprList;
 };
 
 %token <idName>      ID
@@ -52,6 +57,8 @@ int errorCount = 0;
 %type <attribute>    literal_const
 %type <symTableNode> const_list
 %type <bType>        scalar_type
+%type <expr>         function_invoke_statement variable_reference array_list factor term arithmetic_expression relation_expression logical_factor logical_term logical_expression
+%type <exprList>     logical_expression_list
 
 %token  LE_OP
 %token  NE_OP
@@ -147,11 +154,19 @@ funct_def
       {
         struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,false);
         insertTableNode(symbolTableList->global,newNode);
-      } else if (!node->decl) {
-        printError("function '%s' has been defined.", node->name);
+      } else if (node->decl) {
+        checkFuncAttr(node,NULL,$1);
+      } else {
+        printError("redefinition of function '%s'", node->name);
       }
+    }
+    compound_statement
+    {
+      if (!lastReturn)
+        printError("no return statement at the end of non-void function '%s'", $2);
+      lastReturn = false;
       free($2);
-    } compound_statement
+    }
   | scalar_type ID L_PAREN parameter_list R_PAREN
     {
       funcReturnType = createExtType($1,0,NULL);
@@ -162,8 +177,10 @@ funct_def
       {
         struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,false);
         insertTableNode(symbolTableList->global,newNode);
-      } else if (!node->decl) {
-        printError("function '%s' has been defined.", node->name);
+      } else if (node->decl) {
+        checkFuncAttr(node,$4,$1);
+      } else {
+        printError("redefinition of function '%s'", node->name);
       }
     }
     L_BRACE
@@ -185,6 +202,9 @@ funct_def
         printSymTable(symbolTableList->tail);
       deleteLastSymTable(symbolTableList);
       --scope;
+      if (!lastReturn)
+        printError("no return statement at the end of non-void function '%s'", $2);
+      lastReturn = false;
       free($2);
     }
   | VOID ID L_PAREN R_PAREN
@@ -196,12 +216,17 @@ funct_def
       {
         struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,NULL,false);
         insertTableNode(symbolTableList->global,newNode);
-      } else if (!node->decl) {
-        printError("function '%s' has been defined.", node->name);
+      } else if (node->decl) {
+        checkFuncAttr(node,NULL,VOID_t);
+      } else {
+        printError("redefinition of function '%s'", node->name);
       }
       free($2);
     }
     compound_statement
+    {
+      lastReturn = false;
+    }
   | VOID ID L_PAREN parameter_list R_PAREN
     {
       funcReturnType = createExtType(VOID_t,0,NULL);
@@ -212,8 +237,10 @@ funct_def
         struct Attribute *attr = createFunctionAttribute($4);
         struct SymTableNode *newNode = createFunctionNode($2,scope,funcReturnType,attr,false);
         insertTableNode(symbolTableList->global,newNode);
-      } else if (!node->decl) {
-        printError("function '%s' has been defined.", node->name);
+      } else if (node->decl) {
+        checkFuncAttr(node,$4,VOID_t);
+      } else {
+        printError("redefinition of function '%s'", node->name);
       }
     }
     L_BRACE
@@ -237,6 +264,7 @@ funct_def
         deleteLastSymTable(symbolTableList);
         --scope;
         free($2);
+        lastReturn = false;
       }
 ;
 
@@ -249,7 +277,7 @@ funct_decl
       if (node == NULL)
         insertTableNode(symbolTableList->global,newNode);
       else
-        printError("function '%s' has been declared.", node->name);
+        printError("redeclaration of function '%s'", node->name);
       free($2);
     }
   | scalar_type ID L_PAREN parameter_list R_PAREN SEMICOLON
@@ -261,7 +289,7 @@ funct_decl
       if (node == NULL)
         insertTableNode(symbolTableList->global,newNode);
       else
-        printError("function '%s' has been declared.", node->name);
+        printError("redeclaration of function '%s'", node->name);
       free($2);
     }
   | VOID ID L_PAREN R_PAREN SEMICOLON
@@ -272,7 +300,7 @@ funct_decl
       if (node == NULL)
         insertTableNode(symbolTableList->global,newNode);
       else
-        printError("function '%s' has been declared.", node->name);
+        printError("redeclaration of function '%s'", node->name);
       free($2);
     }
   | VOID ID L_PAREN parameter_list R_PAREN SEMICOLON
@@ -284,7 +312,7 @@ funct_decl
       if (node == NULL)
         insertTableNode(symbolTableList->global,newNode);
       else
-        printError("function '%s' has been declared.", node->name);
+        printError("redeclaration of function '%s'", node->name);
       free($2);
     }
 ;
@@ -343,7 +371,6 @@ var_decl
       while(listNode != NULL)
       {
         newNode = createVariableNode(listNode->name,scope,listNode->type);
-        newNode->type->baseType = $1;
         insertTableNode(symbolTableList->tail,newNode);
         listNode = listNode->next;
       }
@@ -354,7 +381,7 @@ var_decl
 identifier_list
   : identifier_list COMMA ID
     {
-      struct ExtType *type = createExtType(VOID,false,NULL);//type unknown here
+      struct ExtType *type = createExtType(baseType,false,NULL);//type unknown here
       struct Variable *newVariable = createVariable($3,type);
       free($3);
       connectVariableList($1,newVariable);
@@ -362,11 +389,14 @@ identifier_list
     }
   | identifier_list COMMA ID ASSIGN_OP logical_expression
     {
-
-      struct ExtType *type = createExtType(VOID,false,NULL);//type unknown here
+      struct ExtType *type = createExtType(baseType,false,NULL);//type unknown here
       struct Variable *newVariable = createVariable($3,type);
+      struct Expr* tempExpr = createVariableExpr(newVariable);
+      checkAssignOp(tempExpr,$5);
+      deleteExpr(tempExpr);
       free($3);
       connectVariableList($1,newVariable);
+
       $$ = $1;
     }
   | identifier_list COMMA array_decl ASSIGN_OP initial_array
@@ -392,14 +422,17 @@ identifier_list
   | ID ASSIGN_OP logical_expression
     {
 
-      struct ExtType *type = createExtType(VOID,false,NULL);//type unknown here
+      struct ExtType *type = createExtType(baseType,false,NULL);
       struct Variable *newVariable = createVariable($1,type);
+      struct Expr* tempExpr = createVariableExpr(newVariable);
+      checkAssignOp(tempExpr,$3);
+      deleteExpr(tempExpr);
       $$ = createVariableList(newVariable);
       free($1);
     }
   | ID
     {
-      struct ExtType *type = createExtType(VOID,false,NULL);//type unknown here
+      struct ExtType *type = createExtType(baseType,false,NULL);
       struct Variable *newVariable = createVariable($1,type);
       $$ = createVariableList(newVariable);
       free($1);
@@ -424,6 +457,9 @@ literal_list
       $$ = createInitArray();
     }
   |
+    {
+      $$ = NULL;
+    }
 ;
 
 const_decl
@@ -441,7 +477,7 @@ const_decl
 const_list
   : const_list COMMA ID ASSIGN_OP literal_const
     {
-      struct ExtType *type = createExtType($5->constVal->type,false,NULL);
+      struct ExtType *type = createExtType(baseType,false,NULL);
       struct SymTableNode *temp = $1;
       while(temp->next != NULL)
       {
@@ -452,7 +488,7 @@ const_list
     }
   | ID ASSIGN_OP literal_const
     {
-      struct ExtType *type = createExtType($3->constVal->type,false,NULL);
+      struct ExtType *type = createExtType(baseType,false,NULL);
       $$ = createConstNode($1,scope,type,$3);
       free($1);
     }
@@ -461,7 +497,7 @@ const_list
 array_decl
   : ID dim
     {
-      struct ExtType *type = createExtType(VOID,true,$2);//type unknown here
+      struct ExtType *type = createExtType(baseType,true,$2);
       struct Variable *newVariable = createVariable($1,type);
       free($1);
       $$ = newVariable;
@@ -504,24 +540,47 @@ var_const_stmt_list
 ;
 
 statement
-  : compound_statement
-  | simple_statement
-  | conditional_statement
-  | while_statement
-  | for_statement
-  | function_invoke_statement
+  : compound_statement { lastReturn = false; }
+  | simple_statement { lastReturn = false; }
+  | conditional_statement { lastReturn = false; }
+  | while_statement { lastReturn = false; }
+  | for_statement { lastReturn = false; }
+  | function_invoke_statement { lastReturn = false; }
   | jump_statement
 ;
 
 simple_statement
   : variable_reference ASSIGN_OP logical_expression SEMICOLON
+    {
+      checkAssignOp($1,$3);
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | PRINT logical_expression SEMICOLON
+    {
+      checkPrintRead($2);
+      deleteExpr($2);
+    }
   | READ variable_reference SEMICOLON
+    {
+      checkPrintRead($2);
+      deleteExpr($2);
+    }
 ;
 
 conditional_statement
-  : IF L_PAREN logical_expression R_PAREN compound_statement
+  : IF L_PAREN logical_expression R_PAREN
+    {
+      checkCond($3,"if");
+      deleteExpr($3);
+    }
+    compound_statement
+
   | IF L_PAREN logical_expression R_PAREN
+    {
+      checkCond($3,"if");
+      deleteExpr($3);
+    }
       compound_statement
     ELSE
       compound_statement
@@ -535,8 +594,14 @@ while_statement
       AddSymTable(symbolTableList);
     }
     L_PAREN logical_expression R_PAREN
+    {
+      insideLoop += 1;
+      checkCond($4,"while");
+      deleteExpr($4);
+    }
     L_BRACE var_const_stmt_list R_BRACE
     {
+      insideLoop -= 1;
       if(Opt_SymTable == 1)
         printSymTable(symbolTableList->tail);
       deleteLastSymTable(symbolTableList);
@@ -544,6 +609,7 @@ while_statement
     }
   | DO L_BRACE
     {
+      insideLoop += 1;
       //enter a new scope
       ++scope;
       AddSymTable(symbolTableList);
@@ -551,6 +617,9 @@ while_statement
     var_const_stmt_list
     R_BRACE WHILE L_PAREN logical_expression R_PAREN SEMICOLON
     {
+      insideLoop -= 1;
+      checkCond($8,"while");
+      deleteExpr($8);
       if(Opt_SymTable == 1)
         printSymTable(symbolTableList->tail);
       deleteLastSymTable(symbolTableList);
@@ -566,8 +635,12 @@ for_statement
       AddSymTable(symbolTableList);
     }
     L_PAREN initial_expression_list SEMICOLON control_expression_list SEMICOLON increment_expression_list R_PAREN
+    {
+      insideLoop += 1;
+    }
     L_BRACE var_const_stmt_list R_BRACE
     {
+      insideLoop -= 1;
       if(Opt_SymTable == 1)
         printSymTable(symbolTableList->tail);
       deleteLastSymTable(symbolTableList);
@@ -582,9 +655,25 @@ initial_expression_list
 
 initial_expression
   : initial_expression COMMA variable_reference ASSIGN_OP logical_expression
+    {
+      checkAssignOp($3,$5);
+      deleteExpr($3);
+      deleteExpr($5);
+    }
   | initial_expression COMMA logical_expression
+    {
+      deleteExpr($3);
+    }
   | logical_expression
+    {
+      deleteExpr($1);
+    }
   | variable_reference ASSIGN_OP logical_expression
+    {
+      checkAssignOp($1,$3);
+      deleteExpr($1);
+      deleteExpr($3);
+    }
 ;
 
 control_expression_list
@@ -594,9 +683,33 @@ control_expression_list
 
 control_expression
   : control_expression COMMA variable_reference ASSIGN_OP logical_expression
+    {
+      printError("control expression must be of type boolean");
+      /*
+      checkAssignOp($3,$5);
+      deleteExpr($3);
+      deleteExpr($5);
+      */
+    }
   | control_expression COMMA logical_expression
+    {
+      checkCond($3,"for");
+      deleteExpr($3);
+    }
   | logical_expression
+    {
+      checkCond($1,"for");
+      deleteExpr($1);
+    }
   | variable_reference ASSIGN_OP logical_expression
+    {
+      printError("control expression must be of type boolean");
+      /*
+      checkAssignOp($1,$3);
+      deleteExpr($1);
+      deleteExpr($3);
+      */
+    }
 ;
 
 increment_expression_list
@@ -606,34 +719,78 @@ increment_expression_list
 
 increment_expression
   : increment_expression COMMA variable_reference ASSIGN_OP logical_expression
+    {
+      checkAssignOp($3,$5);
+      deleteExpr($3);
+      deleteExpr($5);
+    }
   | increment_expression COMMA logical_expression
+    {
+      deleteExpr($3);
+    }
   | logical_expression
+    {
+      deleteExpr($1);
+    }
   | variable_reference ASSIGN_OP logical_expression
+    {
+      checkAssignOp($1,$3);
+      deleteExpr($1);
+      deleteExpr($3);
+    }
 ;
 
 function_invoke_statement
   : ID L_PAREN logical_expression_list R_PAREN SEMICOLON
     {
-      findID(symbolTableList,$1);
+      struct SymTableNode* node = findID(symbolTableList,$1);
+      checkFunction(node,true);
+      checkFuncCall(node, $3);
+      deleteExprList($3);
       free($1);
     }
   | ID L_PAREN R_PAREN SEMICOLON
     {
-      findID(symbolTableList,$1);
+      struct SymTableNode* node = findID(symbolTableList,$1);
+      checkFunction(node,true);
+      checkFuncCall(node, NULL);
       free($1);
     }
 ;
 
 jump_statement
   : CONTINUE SEMICOLON
+    {
+      if (!insideLoop)
+        printError("'continue' statement not in loop statement");
+      lastReturn = false;
+    }
   | BREAK SEMICOLON
+    {
+      if (!insideLoop)
+        printError("'break' statement not in loop statement");
+      lastReturn = false;
+    }
   | RETURN logical_expression SEMICOLON
+    {
+      lastReturn = true;
+      checkReturn($2,funcReturnType);
+      deleteExpr($2);
+    }
 ;
 
 variable_reference
   : array_list
+    {
+      $$ = $1;
+    }
   | ID
     {
+      struct SymTableNode* node = findID(symbolTableList, $1);
+      if (checkFunction(node,false))
+        $$ = createExpr(node);
+      else
+        $$ = NULL;
       free($1);
     }
 ;
@@ -641,73 +798,192 @@ variable_reference
 
 logical_expression
   : logical_expression OR_OP logical_term
+    {
+      $$ = checkLogicalOp($1,$3,"||");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | logical_term
+    {
+      $$ = $1;
+    }
 ;
 
 logical_term
   : logical_term AND_OP logical_factor
+    {
+      $$ = checkLogicalOp($1,$3,"&&");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | logical_factor
+    {
+      $$ = $1;
+    }
 ;
 
 logical_factor
   : NOT_OP logical_factor
+    {
+      $$ = checkNotOp($2);
+      deleteExpr($2);
+    }
   | relation_expression
+    {
+      $$ = $1;
+    }
 ;
 
 relation_expression
-  : arithmetic_expression relation_operator arithmetic_expression
+  : arithmetic_expression LT_OP arithmetic_expression
+    {
+      $$ = checkRelOp($1,$3,"<");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
+  | arithmetic_expression LE_OP arithmetic_expression
+    {
+      $$ = checkRelOp($1,$3,"<=");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
+  | arithmetic_expression EQ_OP arithmetic_expression
+    {
+      $$ = checkCompOp($1,$3,"==");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
+  | arithmetic_expression GE_OP arithmetic_expression
+    {
+      $$ = checkRelOp($1,$3,">=");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
+  | arithmetic_expression GT_OP arithmetic_expression
+    {
+      $$ = checkRelOp($1,$3,">");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
+  | arithmetic_expression NE_OP arithmetic_expression
+    {
+      $$ = checkCompOp($1,$3,"!=");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | arithmetic_expression
+    {
+      $$ = $1;
+    }
 ;
-
-relation_operator
-  : LT_OP
-  | LE_OP
-  | EQ_OP
-  | GE_OP
-  | GT_OP
-  | NE_OP
-  ;
 
 arithmetic_expression
   : arithmetic_expression ADD_OP term
+    {
+      $$ = checkArithOp($1,$3,"+");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | arithmetic_expression SUB_OP term
+    {
+      $$ = checkArithOp($1,$3,"-");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | relation_expression
+    {
+      $$ = $1;
+    }
   | term
+    {
+      $$ = $1;
+    }
 ;
 
 term
   : term MUL_OP factor
+    {
+      $$ = checkArithOp($1,$3,"*");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | term DIV_OP factor
+    {
+      $$ = checkArithOp($1,$3,"/");
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | term MOD_OP factor
+    {
+      $$ = checkModOp($1,$3);
+      deleteExpr($1);
+      deleteExpr($3);
+    }
   | factor
+    {
+      $$ = $1;
+    }
 ;
 
 factor
   : variable_reference
+    {
+      $$ = $1;
+    }
   | SUB_OP factor
+    {
+      $$ = checkSubOp($2);
+    }
   | L_PAREN logical_expression R_PAREN
+    {
+      $$ = $2;
+    }
   | ID L_PAREN logical_expression_list R_PAREN
     {
+      struct SymTableNode* node = findID(symbolTableList, $1);
+      if (checkFunction(node,true) && checkFuncCall(node, $3))
+        $$ = createExpr(node);
+      else
+        $$ = NULL;
+      deleteExprList($3);
       free($1);
     }
   | ID L_PAREN R_PAREN
     {
+      struct SymTableNode* node = findID(symbolTableList, $1);
+      if (checkFunction(node,true))
+        $$ = createExpr(node);
+      else
+        $$ = NULL;
       free($1);
     }
   | literal_const
     {
+      $$ = createConstExpr($1);
       killAttribute($1);
     }
 ;
 
 logical_expression_list
   : logical_expression_list COMMA logical_expression
+    {
+      connectExprList($1,$3);
+      $$ = $1;
+    }
   | logical_expression
+    {
+      $$ = createExprList($1);
+    }
 ;
 
 array_list
   : ID dimension
     {
+      struct SymTableNode* node = findID(symbolTableList,$1);
+      if (checkFunction(node, false))
+        $$ = createArrayRefExpr(node, $2);
+      else
+        $$ = NULL;
       free($1);
     }
 ;
@@ -715,12 +991,12 @@ array_list
 dimension
   : dimension ML_BRACE logical_expression MR_BRACE
     {
-      // connectArrayDimNode($1,createArrayDimNode($3));
-      // $$ = $1;
+      connectArrayDimNode($1,createArrayDimNode(0));
+      $$ = $1;
     }
   | ML_BRACE logical_expression MR_BRACE
     {
-      // $$ = createArrayDimNode($2);
+      $$ = createArrayDimNode(0);
     }
 ;
 
@@ -728,22 +1004,27 @@ scalar_type
   : INT
     {
       $$ = INT_t;
+      baseType = $$;
     }
   | DOUBLE
     {
       $$ = DOUBLE_t;
+      baseType = $$;
     }
   | STRING
     {
       $$ = STRING_t;
+      baseType = $$;
     }
   | BOOL
     {
       $$ = BOOL_t;
+      baseType = $$;
     }
   | FLOAT
     {
       $$ = FLOAT_t;
+      baseType = $$;
     }
 ;
 

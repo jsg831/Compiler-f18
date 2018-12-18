@@ -93,18 +93,21 @@ int deleteLastSymTable(struct SymTableList* list)//leave scope
 
 int insertTableNode(struct SymTable *table,struct SymTableNode* newNode)
 {
+  if (table == NULL || newNode == NULL) return -1;
   // Check if the symbol has been defined before
-  struct SymTableNode* node = findFuncDeclaration(table, newNode->name);
+  struct SymTableNode* node = findTableNode(table, newNode->name);
   if (node != NULL)
   {
-    // If the last entry is a function declaration, then it is legal
-    if (node->decl && !newNode->decl)
-    {
-      // set as defined
-      node->decl = false;
-    } else {
-      printError("symbol '%s' has been declared.", newNode->name);
+    printError("symbol '%s' is redeclared.", newNode->name);
+    deleteTableNode(newNode);
+    return -1;
+  }
+  if (newNode->kind != FUNCTION_t) {
+    node = findTableNode(symbolTableList->global, newNode->name);
+    if (node != NULL && node->kind == FUNCTION_t) {
+      printError("symbol '%s' is declared as a function.", newNode->name);
       deleteTableNode(newNode);
+      return -1;
     }
   }
   if (table->tail == NULL)
@@ -197,6 +200,14 @@ struct SymTableNode* createConstNode(const char* name,int level,struct ExtType* 
   strncpy(newNode->name,name,32);
   newNode->kind = CONSTANT_t;
   newNode->level = level;
+  struct ExtType* tempType = createExtType(attr->constVal->type,false,NULL);
+  if (!canConvertTypeImplicitly(tempType,type,false)) {
+    char* str = typeString(tempType);
+    printError("constant %s should be of type <%s>", name, str);
+    type->baseType = attr->constVal->type;
+    free(str);
+  }
+  killExtType(tempType);
   /**/
   newNode->type = type;
   newNode->type->reference += 1;
@@ -515,7 +526,7 @@ int printSymTable(struct SymTable* table)
     entry = entry->next;
     printf("\n");
   }
-  printf("======================================================================================\n");
+  printf("=======================================================================================\n");
   return 0;
 }
 
@@ -571,6 +582,61 @@ int printType(struct ExtType* extType)
   }
   printf("%-19s",strBuffer);
   return 0;
+}
+
+
+char* typeString(struct ExtType* extType)
+{
+  struct ArrayDimNode *dimNode;
+  char *strBuffer;
+  char strTemp[20];
+  if (extType == NULL)
+    return "";
+  strBuffer = (char*)malloc(20*sizeof(char));
+  switch (extType->baseType)
+  {
+    case INT_t:
+      strncpy(strBuffer,"int",3);
+      strBuffer[3] = '\0'; // to fix a weird bug: 'int?' is displayed
+      break;
+    case FLOAT_t:
+      strncpy(strBuffer,"float",5);
+      break;
+    case DOUBLE_t:
+      strncpy(strBuffer,"double",6);
+      break;
+    case BOOL_t:
+      strncpy(strBuffer,"bool",4);
+      break;
+    case STRING_t:
+      strncpy(strBuffer,"string",6);
+      break;
+    case VOID_t:
+      strncpy(strBuffer,"void",4);
+      break;
+    default:
+      strncpy(strBuffer,"unknown",7);
+      break;
+  }
+  if (extType->isArray)
+  {
+    dimNode = extType->dimArray;
+    while (dimNode != NULL)
+    {
+      memset(strTemp,0,20*sizeof(char));
+      sprintf(strTemp,"[%d]",dimNode->size);
+      if (strlen(strBuffer)+strlen(strTemp) < 20)
+        strcat(strBuffer,strTemp);
+      else
+      {
+        strBuffer[16]='.';
+        strBuffer[17]='.';
+        strBuffer[18]='.';
+      }
+      dimNode = dimNode->next;
+    }
+  }
+  return strBuffer;
 }
 
 int printConstAttribute(struct ConstAttr* constAttr)
@@ -791,10 +857,13 @@ struct InitArray* createInitArray()
   return list;
 }
 
-int deleteInitArray(struct InitArray* list)
+int deleteInitArray(struct InitArray* target)
 {
-  if (list->reference > 0) return -1;
-  free(list);
+  if (target == NULL)
+    return -1;
+  target->reference -= 1;
+  if (target->reference > 0) return -1;
+  free(target);
   return 0;
 }
 
@@ -803,4 +872,60 @@ int connectInitArray(struct InitArray* list)
   if (list == NULL) return -1;
   list->size += 1;
   return 0;
+}
+
+bool canConvertTypeImplicitly(struct ExtType* source, struct ExtType* target, bool arg)
+{
+  if (source == NULL || target == NULL) return false;
+  if (source->isArray != target->isArray) return false;
+  if (source->baseType != target->baseType)
+  {
+    switch (target->baseType)
+    {
+      case INT_t:
+        return false;
+      case FLOAT_t:
+        if (source->baseType == INT_t) break;
+        return false;
+      case DOUBLE_t:
+        if (source->baseType == INT_t || source->baseType == FLOAT_t) break;
+        return false;
+      case BOOL_t:
+      case STRING_t:
+      case VOID_t:
+        return false;
+    }
+  }
+  if (source->isArray)
+  {
+    if (arg && !checkArraySize(source->dimArray, target->dimArray))
+      return false;
+    if (!arg && checkArrayDim(source->dimArray, target->dimArray) != 0)
+      return false;
+  }
+  return true;
+}
+
+int checkArrayDim(struct ArrayDimNode* a1, struct ArrayDimNode* a2)
+{
+  while (a1 != NULL && a2 != NULL)
+  {
+    a1 = a1->next;
+    a2 = a2->next;
+  }
+  if (a1 == NULL && a2 == NULL) return 0;
+  if (a1 != NULL) return 1;
+  if (a2 != NULL) return -1;
+  return 0;
+}
+
+bool checkArraySize(struct ArrayDimNode* a1, struct ArrayDimNode* a2)
+{
+  while (a1 != NULL && a2 != NULL)
+  {
+    if (a1->size != a2->size) return false;
+    a1 = a1->next;
+    a2 = a2->next;
+  }
+  return (a1 == NULL && a2 == NULL);
 }

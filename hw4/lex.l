@@ -322,7 +322,7 @@ id *new_id();
 	}
 
 <STR>\"	{
-		//LIST;
+		LIST;
 		//strcat( buf, "\"");
 		yylval.stringVal = strdup(strContent);
 		if( Opt_Token)
