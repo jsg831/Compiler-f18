@@ -36,6 +36,8 @@ struct Expr* createArrayRefExpr(struct SymTableNode* node, struct ArrayDimNode* 
 {
   if (node == NULL) return NULL;
   struct Expr* expr = (struct Expr*)malloc(sizeof(struct Expr));
+  expr->kind = node->kind;
+  expr->next = NULL;
   if (node->kind == FUNCTION_t)
   {
     expr->type = NULL;
@@ -50,25 +52,28 @@ struct Expr* createArrayRefExpr(struct SymTableNode* node, struct ArrayDimNode* 
     }
     else if (expr->type != NULL)
     {
-      switch (checkArrayDim(dim, node->type->dimArray))
+      int arrayCheck = checkArrayDim(dim, node->type->dimArray);
+      switch (arrayCheck)
       {
         case -1:
-          expr->type->isArray = true;
-          expr->type->dimArray = node->type->dimArray;
-          expr->type->dimArray->reference += 1;
+          printError("too many subscripts on array '%s'", node->name);
+          deleteExpr(expr);
+          expr = NULL;
           break;
         case 0:
           expr->type->isArray = false;
           break;
-        case 1:
-          printError("too many subscripts on array '%s'", node->name);
-          expr->type->isArray = false;
+        default:
+          expr->type->isArray = true;
+          expr->type->dimArray = node->type->dimArray;
+          while (arrayCheck != 0) {
+            expr->type->dimArray = expr->type->dimArray->next;
+            arrayCheck -= 1;
+          }
+          expr->type->dimArray->reference += 1;
       }
-      // to-do: delete prefix dim if isArray is true
     }
   }
-  expr->kind = node->kind;
-  expr->next = NULL;
   return expr;
 }
 
@@ -88,25 +93,29 @@ struct ExprList* createExprList(struct Expr* head)
 {
   struct ExprList *list;
   if (head == NULL)
-    list = NULL;
-  else
   {
-    list = (struct ExprList*)malloc(sizeof(struct ExprList));
-    struct Expr* temp = head;
-    while (temp->next != NULL)
-    {
-      temp = temp->next;
-    }
-    /**/
-    list->head = head;
-    head->reference += 1;
-    /**/
-    list->tail = temp;
-    if (head!=temp)
-      temp->reference += 1;
-    /**/
-    list->reference = 0;
+    head = (struct Expr*)malloc(sizeof(struct Expr));
+    head->type = createExtType(VOID_t,false,NULL);
+    head->type->isArray = false;
+    head->type->dimArray = NULL;
+    head->reference = 0;
+    head->next = NULL;
   }
+  list = (struct ExprList*)malloc(sizeof(struct ExprList));
+  struct Expr* temp = head;
+  while (temp->next != NULL)
+  {
+    temp = temp->next;
+  }
+  /**/
+  list->head = head;
+  head->reference += 1;
+  /**/
+  list->tail = temp;
+  if (head!=temp)
+    temp->reference += 1;
+  /**/
+  list->reference = 0;
   return list;
 }
 
@@ -138,8 +147,17 @@ int deleteExprList(struct ExprList* list)
 
 int connectExprList(struct ExprList* list, struct Expr* node)
 {
-  if (list == NULL || node == NULL)
+  if (list == NULL)
     return -1;
+  if (node == NULL)
+  {
+    node = (struct Expr*)malloc(sizeof(struct Expr));
+    node->type = createExtType(VOID_t,false,NULL);
+    node->type->isArray = false;
+    node->type->dimArray = NULL;
+    node->reference = 0;
+    node->next = NULL;
+  }
   if (node->next != NULL)
     return -2;
   if (list->tail != list->head)
@@ -208,6 +226,20 @@ bool checkFunction(struct SymTableNode* node, bool func)
   return false;
 }
 
+void checkInitArrayType(struct Expr* expr, int n)
+{
+  if (expr == NULL || expr->type == NULL) return;
+  struct ExtType* tempType = createExtType(baseType,false,NULL);
+  if (!canConvertTypeImplicitly(expr->type,tempType,false) && expr->type->baseType != VOID_t) {
+    char* sourceString = typeString(expr->type);
+    char* targetString = typeString(tempType);
+    printError("element %d of initial list is of type '%s', expected '%s'", n, sourceString, targetString);
+    free(sourceString);
+    free(targetString);
+  }
+  killExtType(tempType);
+}
+
 bool checkArrayOp(struct Expr* lhs, struct Expr *rhs)
 {
   if (lhs == NULL || rhs == NULL || lhs->type == NULL || rhs->type == NULL)
@@ -251,7 +283,7 @@ bool checkFuncCall(struct SymTableNode* node, struct ExprList* list)
     argc += 1;
     sourceString = typeString(expr->type);
     targetString = typeString(func->value);
-    if (!canConvertTypeImplicitly(expr->type, func->value, true))
+    if (!canConvertTypeImplicitly(expr->type, func->value, true) && expr->type->baseType != VOID_t)
       printError("type of argument %d of '%s' is '%s', expected '%s'", argc, node->name, sourceString, targetString);
     func = func->next;
     expr = expr->next;

@@ -203,7 +203,7 @@ struct SymTableNode* createConstNode(const char* name,int level,struct ExtType* 
   struct ExtType* tempType = createExtType(attr->constVal->type,false,NULL);
   if (!canConvertTypeImplicitly(tempType,type,false)) {
     char* str = typeString(tempType);
-    printError("constant %s should be of type <%s>", name, str);
+    printError("constant %s should be of type '%s'", name, str);
     type->baseType = attr->constVal->type;
     free(str);
   }
@@ -908,14 +908,16 @@ bool canConvertTypeImplicitly(struct ExtType* source, struct ExtType* target, bo
 
 int checkArrayDim(struct ArrayDimNode* a1, struct ArrayDimNode* a2)
 {
+  int dim = 0;
   while (a1 != NULL && a2 != NULL)
   {
+    dim += 1;
     a1 = a1->next;
     a2 = a2->next;
   }
   if (a1 == NULL && a2 == NULL) return 0;
-  if (a1 != NULL) return 1;
-  if (a2 != NULL) return -1;
+  if (a1 != NULL) return -1; // too many subscripts
+  if (a2 != NULL) return dim;
   return 0;
 }
 

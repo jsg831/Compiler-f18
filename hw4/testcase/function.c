@@ -73,3 +73,21 @@ void functionInvocation() {
   func(i); // too few arguments
   func(i, f, d); // too many arguments
 }
+
+// function with array arguments
+void arrayFunction(int a[2]);
+void checkArraySize() {
+  int a[2][2], b[2][1];
+  arrayFunction(a);
+  arrayFunction(a[0]); // legal
+  arrayFunction(b[0]);
+  arrayFunction(a[0][0]);
+  arrayFunction(a[0][0][0]);
+}
+
+// possible false error message
+void someFunction(int i, float f);
+void falseErrorMessage() {
+  someFunction(i%f, f); // error in argument 1 (no argument count error)
+  someFunction(i, falseErrorMessage); // function cannot be an operand (no argument count error)
+}

@@ -29,7 +29,7 @@ void typeChecking() {
   // == !=
   b = (b != b) == (i < f); // legal
   b = i == s; // illegal ('int' == 'string')
-  b = s != b; // illegal ('string' != 'bool')
+  b = s != s; // illegal ('string' != 'string')
   d = d == i; // illegal ('double' = 'bool')
 }
 

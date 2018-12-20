@@ -8,6 +8,7 @@
 #include "error.h"
 
 extern int linenum;
+extern BTYPE baseType;
 
 typedef enum { JUMP_t } STYPE;
 
@@ -49,6 +50,7 @@ void checkInitArray(struct Variable* variable, struct InitArray* list);
 bool checkFunction(struct SymTableNode* node, bool func);
 
 // type checking
+void checkInitArrayType(struct Expr* expr, int n);
 bool checkArrayOp(struct Expr* lhs, struct Expr *rhs);
 void checkFuncAttr(struct SymTableNode* node, struct FuncAttrNode* list, BTYPE returnType);
 bool checkFuncCall(struct SymTableNode* node, struct ExprList* list);

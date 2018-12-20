@@ -450,11 +450,15 @@ literal_list
   : literal_list COMMA logical_expression
     {
       connectInitArray($1);
+      checkInitArrayType($3,$1->size);
       $$ = $1;
+      deleteExpr($3);
     }
   | logical_expression
     {
       $$ = createInitArray();
+      checkInitArrayType($1,1);
+      deleteExpr($1);
     }
   |
     {
