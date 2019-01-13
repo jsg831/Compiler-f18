@@ -21,4 +21,5 @@ void array() {
   i = a1[1]; // assign array to variable
   a1[1] = i; // assign value to array
   i = a1[1][2][3]; // too many array subscripts
+  i = a1[f][s];
 }

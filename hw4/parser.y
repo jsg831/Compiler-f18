@@ -996,11 +996,13 @@ dimension
   : dimension ML_BRACE logical_expression MR_BRACE
     {
       connectArrayDimNode($1,createArrayDimNode(0));
+      checkArraySubscript($3);
       $$ = $1;
     }
   | ML_BRACE logical_expression MR_BRACE
     {
       $$ = createArrayDimNode(0);
+      checkArraySubscript($2);
     }
 ;
 

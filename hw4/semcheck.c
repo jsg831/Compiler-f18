@@ -226,6 +226,16 @@ bool checkFunction(struct SymTableNode* node, bool func)
   return false;
 }
 
+void checkArraySubscript(struct Expr* expr)
+{
+  if (expr == NULL || expr->type == NULL || expr->type->baseType == VOID_t) return;
+  if (expr->type->baseType != INT_t) {
+    char* str = typeString(expr->type);
+    printError("array subscript is of type '%s', expected 'int'", str);
+    free(str);
+  }
+}
+
 void checkInitArrayType(struct Expr* expr, int n)
 {
   if (expr == NULL || expr->type == NULL) return;
